@@ -1,0 +1,25 @@
+﻿@{
+    ViewData["Title"] = "Главная страница";
+}
+
+<div class="text-center">
+    <h1 class="display-4">Загрузка XES-файлов</h1>
+
+    @if (ViewBag.Message != null)
+    {
+        <div class="alert alert-success">@ViewBag.Message</div>
+    }
+
+    @if (ViewBag.Error != null)
+    {
+        <div class="alert alert-danger">@ViewBag.Error</div>
+    }
+
+    <form asp-action="UploadXes" method="post" enctype="multipart/form-data" class="mt-4">
+        <div class="form-group">
+            <label for="xesFile">Выберите XES-файл:</label>
+            <input type="file" name="xesFile" id="xesFile" class="form-control-file" accept=".xes,.xml" required />
+        </div>
+        <button type="submit" class="btn btn-primary mt-3">Загрузить</button>
+    </form>
+</div>

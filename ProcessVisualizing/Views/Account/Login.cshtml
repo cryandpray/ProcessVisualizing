@@ -1,0 +1,31 @@
+﻿<h2>Вход</h2>
+
+@using (Html.BeginForm("Login", "Account", FormMethod.Post))
+{
+    <div>
+        <label>Логин</label>
+        <input type="text" name="login" class="form-control" />
+        @if (ViewData.ModelState["login"]?.Errors.Count > 0)
+        {
+            <span class="text-danger">@ViewData.ModelState["login"].Errors.First().ErrorMessage</span>
+        }
+    </div>
+
+    <div>
+        <label>Пароль</label>
+        <input type="password" name="password" class="form-control" />
+        @if (ViewData.ModelState["password"]?.Errors.Count > 0)
+        {
+            <span class="text-danger">@ViewData.ModelState["password"].Errors.First().ErrorMessage</span>
+        }
+    </div>
+
+    @if (!ViewData.ModelState.IsValid && ViewData.ModelState[""]?.Errors.Count > 0)
+    {
+        <div class="text-danger">@ViewData.ModelState[""].Errors.First().ErrorMessage</div>
+    }
+
+    <button type="submit" class="btn btn-primary mt-3">Войти</button>
+}
+
+<p class="mt-3">Нет аккаунта? @Html.ActionLink("Зарегистрироваться", "Register")</p>

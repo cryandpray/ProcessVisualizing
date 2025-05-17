@@ -1,0 +1,24 @@
+﻿@model ProcessVisualizing.Models.User
+
+<h2>Регистрация</h2>
+
+@using (Html.BeginForm("Register", "Account", FormMethod.Post))
+{
+    @Html.AntiForgeryToken() <!-- Добавляем токен -->
+
+    <div>
+        @Html.LabelFor(m => m.Login)
+        @Html.TextBoxFor(m => m.Login, new { @class = "form-control" })
+        @Html.ValidationMessageFor(m => m.Login, "", new { @class = "text-danger" })
+    </div>
+
+    <div>
+        <label>Пароль</label>
+        <input type="password" name="password" class="form-control" />
+        @Html.ValidationMessage("password", new { @class = "text-danger" })
+    </div>
+
+    <button type="submit" class="btn btn-primary mt-3">Зарегистрироваться</button>
+}
+
+<p class="mt-3">Уже есть аккаунт? @Html.ActionLink("Войти", "Login")</p>
