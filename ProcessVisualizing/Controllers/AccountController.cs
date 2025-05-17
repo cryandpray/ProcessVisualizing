@@ -1,17 +1,18 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using ProcessVisualizing.Models;
 using System.Data.SQLite;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace ProcessVisualizing.Controllers
 {
     public class AccountController : Controller
     {
         private readonly ApplicationDbContext _context;
+        private readonly JwtService _jwtService;
 
-        public AccountController()
+        public AccountController(ApplicationDbContext context, JwtService jwtService)
         {
-            _context = new ApplicationDbContext();
+            _context = context;
+            _jwtService = jwtService;
         }
 
         [HttpGet]
@@ -65,6 +66,17 @@ namespace ProcessVisualizing.Controllers
                     var getIdCmd = new SQLiteCommand("SELECT last_insert_rowid()", connection);
                     int userId = Convert.ToInt32(getIdCmd.ExecuteScalar());
 
+                    // Генерируем токен
+                    var token = _jwtService.GenerateToken(userId);
+
+                    // Сохраняем в HttpOnly cookie
+                    Response.Cookies.Append("jwt_token", token, new CookieOptions
+                    {
+                        HttpOnly = true,
+                        Secure = true, // включи только при HTTPS
+                        Expires = DateTimeOffset.UtcNow.AddMinutes(43200)
+                    });
+
                     // Запись активности
                     var activityCmd = new SQLiteCommand(
                         "INSERT INTO UserActivity (user_id, action) VALUES (@userId, 'Регистрация')",
@@ -112,6 +124,17 @@ namespace ProcessVisualizing.Controllers
                             {
                                 int userId = Convert.ToInt32(reader["id"]);
 
+                                // Генерируем токен
+                                var token = _jwtService.GenerateToken(userId);
+
+                                // Сохраняем в HttpOnly cookie
+                                Response.Cookies.Append("jwt_token", token, new CookieOptions
+                                {
+                                    HttpOnly = true,
+                                    Secure = true, // включи только при HTTPS
+                                    Expires = DateTimeOffset.UtcNow.AddMinutes(43200)
+                                });
+
                                 // Запись активности
                                 var activityCmd = new SQLiteCommand(
                                     "INSERT INTO UserActivity (user_id, action) VALUES (@userId, 'Вход в систему')",
@@ -134,5 +157,27 @@ namespace ProcessVisualizing.Controllers
 
             return View();
         }
+
+        public int? GetUserIdFromToken()
+        {
+            if (Request.Cookies.TryGetValue("jwt_token", out var token))
+            {
+                var principal = _jwtService.ValidateToken(token);
+                var uidClaim = principal?.FindFirst("uid");
+                if (uidClaim != null && int.TryParse(uidClaim.Value, out var userId))
+                {
+                    return userId;
+                }
+            }
+            return null;
+        }
+
+        public IActionResult Logout()
+        {
+            Response.Cookies.Delete("jwt_token");
+            return RedirectToAction("Login");
+        }
+
+
     }
 }

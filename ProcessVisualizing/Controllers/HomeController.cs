@@ -1,15 +1,8 @@
-﻿using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using System;
-using System.Data.SQLite;
-using System.IO;
-using System.Xml;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.AspNetCore.Mvc;
 using ProcessVisualizing.Models;
+using System.Data.SQLite;
+using System.Xml;
 using System.Xml.Linq;
-using System.Transactions;
 
 namespace ProcessVisualizing.Controllers
 {

@@ -16,6 +16,13 @@ namespace ProcessVisualizing
             // Add services to the container.
             builder.Services.AddControllersWithViews();
 
+            builder.Services.AddSingleton<JwtService>();
+
+
+            builder.Services.AddScoped<ApplicationDbContext>();
+            builder.Services.AddSingleton<JwtService>();
+
+
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.
