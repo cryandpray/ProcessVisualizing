@@ -8,6 +8,8 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using ProcessVisualizing.Models;
+using System.Xml.Linq;
+using System.Transactions;
 
 namespace ProcessVisualizing.Controllers
 {
@@ -63,7 +65,7 @@ namespace ProcessVisualizing.Controllers
                 System.IO.File.Delete(tempFilePath);
 
                 // Сохранение в БД
-                await SaveTracesToDatabaseAsync(traces);
+                await SaveTracesToDatabaseAsync(traces, xesFile.FileName);
 
                 ViewBag.Message = $"Успешно загружено {traces.Count} процессов";
                 _logger.LogInformation($"Успешно загружен XES-файл: {xesFile.FileName}, процессов: {traces.Count}");
@@ -92,135 +94,142 @@ namespace ProcessVisualizing.Controllers
             var traces = new List<XesTrace>();
             try
             {
-                var settings = new XmlReaderSettings
-                {
-                    Async = true,
-                    IgnoreWhitespace = true,
-                    IgnoreComments = true
-                };
+                var doc = XDocument.Load(stream);
 
-                using (var reader = XmlReader.Create(stream, settings))
-                {
-                    var xmlDoc = new XmlDocument();
-                    xmlDoc.Load(reader);
+                // Получаем namespace из корневого элемента
+                XNamespace ns = doc.Root?.Name.Namespace ?? "";
 
-                    foreach (XmlNode traceNode in xmlDoc.SelectNodes("//trace"))
+                foreach (var traceElem in doc.Descendants(ns + "trace"))
+                {
+                    var trace = new XesTrace();
+
+                    // Имя процесса (trace-level attribute)
+                    var nameAttr = traceElem.Elements(ns + "string")
+                        .FirstOrDefault(e => e.Attribute("key")?.Value == "concept:name");
+                    trace.Name = nameAttr?.Attribute("value")?.Value ?? "Unnamed Process";
+
+                    // Обработка событий внутри trace
+                    foreach (var eventElem in traceElem.Elements(ns + "event"))
                     {
-                        var trace = new XesTrace();
+                        var xesEvent = new XesEvent();
 
-                        // Получаем имя процесса
-                        var nameNode = traceNode.SelectSingleNode("string[@key='concept:name']");
-                        trace.Name = nameNode?.Attributes["value"]?.Value ?? "Unnamed Process";
-                        _logger.LogDebug($"Найден процесс: {trace.Name}");
+                        // Имя события
+                        var nameElem = eventElem.Elements(ns + "string")
+                            .FirstOrDefault(e => e.Attribute("key")?.Value == "concept:name");
+                        xesEvent.Name = nameElem?.Attribute("value")?.Value ?? "Unnamed Event";
 
-                        // Получаем все события
-                        foreach (XmlNode eventNode in traceNode.SelectNodes("event"))
+                        // Временная метка
+                        var timeElem = eventElem.Elements(ns + "date")
+                            .FirstOrDefault(e => e.Attribute("key")?.Value == "time:timestamp");
+                        if (timeElem != null && DateTime.TryParse(timeElem.Attribute("value")?.Value, out var timestamp))
                         {
-                            var xesEvent = new XesEvent();
-
-                            // Имя события
-                            var eventNameNode = eventNode.SelectSingleNode("string[@key='concept:name']");
-                            xesEvent.Name = eventNameNode?.Attributes["value"]?.Value ?? "Unnamed Event";
-
-                            // Время события
-                            var timestampNode = eventNode.SelectSingleNode("date[@key='time:timestamp']");
-                            if (timestampNode != null && DateTime.TryParse(timestampNode.Attributes["value"]?.Value, out var timestamp))
-                            {
-                                xesEvent.Timestamp = timestamp;
-                            }
-
-                            // Атрибуты события
-                            foreach (XmlNode attrNode in eventNode.ChildNodes)
-                            {
-                                if (attrNode.Attributes?["key"] != null && attrNode.Attributes?["value"] != null)
-                                {
-                                    xesEvent.Attributes[attrNode.Attributes["key"].Value] = attrNode.Attributes["value"].Value;
-                                }
-                            }
-
-                            trace.Events.Add(xesEvent);
-                            _logger.LogDebug($"Добавлено событие: {xesEvent.Name} с {xesEvent.Attributes.Count} атрибутами");
+                            xesEvent.Timestamp = timestamp;
                         }
 
-                        traces.Add(trace);
+                        // Все атрибуты (string, date и др.)
+                        foreach (var attr in eventElem.Elements())
+                        {
+                            var key = attr.Attribute("key")?.Value;
+                            var value = attr.Attribute("value")?.Value;
+
+                            if (!string.IsNullOrWhiteSpace(key) && value != null)
+                            {
+                                xesEvent.Attributes[key] = value;
+                            }
+                        }
+
+                        trace.Events.Add(xesEvent);
                     }
+
+                    traces.Add(trace);
                 }
+
+                _logger.LogInformation($"Успешно распаршено {traces.Count} процессов.");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Ошибка при парсинге XES-файла");
+                _logger.LogError(ex, "Ошибка при парсинге XES-файла с использованием LINQ to XML.");
                 throw;
             }
 
-            _logger.LogInformation($"Успешно распаршено {traces.Count} процессов");
             return traces;
+
         }
 
-        private async Task SaveTracesToDatabaseAsync(List<XesTrace> traces)
+        private async Task SaveTracesToDatabaseAsync(List<XesTrace> traces, string filename)
         {
             using (var connection = _context.GetConnection())
             {
                 await connection.OpenAsync();
-
-                using (var transaction = connection.BeginTransaction())
                 {
-                    try
+                    using (var transaction = connection.BeginTransaction())
                     {
-                        foreach (var trace in traces)
+                        try
                         {
-                            // 1. Сохраняем процесс
-                            var processCmd = new SQLiteCommand(
-                                "INSERT INTO Processes (name, creation_date) VALUES (@name, @date); " +
-                                "SELECT last_insert_rowid();",
-                                connection, transaction);
-
-                            processCmd.Parameters.AddWithValue("@name", trace.Name);
-                            processCmd.Parameters.AddWithValue("@date", DateTime.Now);
-
-                            int processId = Convert.ToInt32(await processCmd.ExecuteScalarAsync());
-
-                            foreach (var xesEvent in trace.Events)
+                            // 1. Сохраняем информацию о файле
+                            int fileId;
+                            using (var fileCmd = new SQLiteCommand(
+                                "INSERT INTO Files (filename) VALUES (@filename); SELECT last_insert_rowid();",
+                                connection, transaction))
                             {
-                                // 2. Сохраняем событие
-                                var eventCmd = new SQLiteCommand(
-                                    "INSERT INTO Events (process_id, event_name, timestamp) " +
-                                    "VALUES (@processId, @eventName, @timestamp); " +
+                                fileCmd.Parameters.AddWithValue("@filename", filename);
+                                fileId = Convert.ToInt32(await fileCmd.ExecuteScalarAsync());
+                            }
+
+                            // 2. Сохраняем процессы и связанные данные
+                            foreach (var trace in traces)
+                            {
+                                var processCmd = new SQLiteCommand(
+                                    "INSERT INTO Processes (name, creation_date, file_id) VALUES (@name, @date, @fileId); " +
                                     "SELECT last_insert_rowid();",
                                     connection, transaction);
 
-                                eventCmd.Parameters.AddWithValue("@processId", processId);
-                                eventCmd.Parameters.AddWithValue("@eventName", xesEvent.Name);
-                                eventCmd.Parameters.AddWithValue("@timestamp", xesEvent.Timestamp);
+                                processCmd.Parameters.AddWithValue("@name", trace.Name);
+                                processCmd.Parameters.AddWithValue("@date", DateTime.Now);
+                                processCmd.Parameters.AddWithValue("@fileId", fileId);
 
-                                int eventId = Convert.ToInt32(await eventCmd.ExecuteScalarAsync());
+                                int processId = Convert.ToInt32(await processCmd.ExecuteScalarAsync());
 
-                                // 3. Сохраняем атрибуты
-                                foreach (var attr in xesEvent.Attributes)
+                                foreach (var xesEvent in trace.Events)
                                 {
-                                    var attrCmd = new SQLiteCommand(
-                                        "INSERT INTO Attributes (event_id, attribute_name, attribute_value) " +
-                                        "VALUES (@eventId, @name, @value)",
+                                    var eventCmd = new SQLiteCommand(
+                                        "INSERT INTO Events (process_id, event_name, timestamp) VALUES (@processId, @eventName, @timestamp); " +
+                                        "SELECT last_insert_rowid();",
                                         connection, transaction);
 
-                                    attrCmd.Parameters.AddWithValue("@eventId", eventId);
-                                    attrCmd.Parameters.AddWithValue("@name", attr.Key);
-                                    attrCmd.Parameters.AddWithValue("@value", attr.Value);
+                                    eventCmd.Parameters.AddWithValue("@processId", processId);
+                                    eventCmd.Parameters.AddWithValue("@eventName", xesEvent.Name);
+                                    eventCmd.Parameters.AddWithValue("@timestamp", xesEvent.Timestamp);
 
-                                    await attrCmd.ExecuteNonQueryAsync();
+                                    int eventId = Convert.ToInt32(await eventCmd.ExecuteScalarAsync());
+
+                                    foreach (var attr in xesEvent.Attributes)
+                                    {
+                                        var attrCmd = new SQLiteCommand(
+                                            "INSERT INTO Attributes (event_id, attribute_name, attribute_value) VALUES (@eventId, @name, @value)",
+                                            connection, transaction);
+
+                                        attrCmd.Parameters.AddWithValue("@eventId", eventId);
+                                        attrCmd.Parameters.AddWithValue("@name", attr.Key);
+                                        attrCmd.Parameters.AddWithValue("@value", attr.Value);
+
+                                        await attrCmd.ExecuteNonQueryAsync();
+                                    }
                                 }
                             }
-                        }
 
-                        await transaction.CommitAsync();
-                        _logger.LogInformation("Данные успешно сохранены в БД");
-                    }
-                    catch (Exception ex)
-                    {
-                        await transaction.RollbackAsync();
-                        _logger.LogError(ex, "Ошибка при сохранении данных в БД");
-                        throw;
+                            await transaction.CommitAsync();
+                            _logger.LogInformation("Данные успешно сохранены в БД");
+                        }
+                        catch (Exception ex)
+                        {
+                            await transaction.RollbackAsync();
+                            _logger.LogError(ex, "Ошибка при сохранении данных в БД");
+                            throw;
+                        }
                     }
                 }
+
             }
         }
     }
