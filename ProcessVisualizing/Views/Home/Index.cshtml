@@ -2,6 +2,62 @@
     ViewData["Title"] = "Главная страница";
 }
 
+
+@model ProcessVisualizing.Models.ProcessVisualizationModel
+
+<div class="container">
+    <h2>Визуализация процессов</h2>
+    
+    <form method="get" class="mb-4">
+        <div class="form-group">
+            <label>Выберите файл:</label>
+            <select name="fileId" class="form-control" 
+                    asp-items="Model.AvailableFiles" 
+                    onchange="this.form.submit()">
+                <option value="">-- Все файлы --</option>
+            </select>
+        </div>
+    </form>
+
+    @if (Model.ProcessTree != null && Model.ProcessTree.Nodes.Any())
+    {
+        <div id="processTree">
+            @foreach (var process in Model.ProcessTree.Nodes)
+            {
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h5>Процесс: @process.Name</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-group">
+                            @foreach (var evt in process.Events)
+                            {
+                                <li class="list-group-item">
+                                    <strong>@evt.Name</strong> 
+                                    <span class="text-muted">(@evt.Timestamp.ToString("g"))</span>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else if (Model.SelectedFileId.HasValue)
+    {
+        <div class="alert alert-info">Нет данных для отображения</div>
+    }
+</div>
+
+<style>
+    #processTree {
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+</style>
+
+
+
 <div class="text-center">
     <h1 class="display-4">Загрузка XES-файлов</h1>
 

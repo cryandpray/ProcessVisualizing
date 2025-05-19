@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Rendering;
 using ProcessVisualizing.Models;
 using System.Data.SQLite;
 using System.Xml;
@@ -17,9 +18,97 @@ namespace ProcessVisualizing.Controllers
             _logger = logger;
         }
 
-        public IActionResult Index()
+        //public IActionResult Index()
+        //{
+        //    return View();
+        //}
+
+        public IActionResult Index(int? fileId)
         {
-            return View();
+            var model = new ProcessVisualizationModel
+            {
+                SelectedFileId = fileId
+            };
+
+            using (var connection = _context.GetConnection())
+            {
+                connection.Open();
+
+                // Получаем список файлов
+                var filesCmd = new SQLiteCommand("SELECT id, filename FROM Files", connection);
+                using (var reader = filesCmd.ExecuteReader())
+                {
+                    model.AvailableFiles = new List<SelectListItem>();
+                    while (reader.Read())
+                    {
+                        model.AvailableFiles.Add(new SelectListItem
+                        {
+                            Value = reader["id"].ToString(),
+                            Text = reader["filename"].ToString()
+                        });
+                    }
+                }
+
+                // Если выбран файл - загружаем его процессы
+                if (model.SelectedFileId.HasValue)
+                {
+                    model.ProcessTree = GetProcessTree(model.SelectedFileId.Value, connection);
+                }
+            }
+
+            return View(model);
+        }
+
+        private ProcessTree GetProcessTree(int fileId, SQLiteConnection connection)
+        {
+            var tree = new ProcessTree();
+
+            // Получаем процессы для файла
+            var processesCmd = new SQLiteCommand(
+                "SELECT id, name FROM Processes WHERE file_id = @fileId",
+                connection);
+            processesCmd.Parameters.AddWithValue("@fileId", fileId);
+
+            using (var processesReader = processesCmd.ExecuteReader())
+            {
+                while (processesReader.Read())
+                {
+                    var processId = Convert.ToInt32(processesReader["id"]);
+                    var processName = processesReader["name"].ToString();
+
+                    var processNode = new ProcessNode
+                    {
+                        Id = processId,
+                        Name = processName,
+                        Events = new List<EventNode>()
+                    };
+
+                    // Получаем события для процесса
+                    var eventsCmd = new SQLiteCommand(
+                        "SELECT id, event_name, timestamp FROM Events WHERE process_id = @processId ORDER BY timestamp",
+                        connection);
+                    eventsCmd.Parameters.AddWithValue("@processId", processId);
+
+                    using (var eventsReader = eventsCmd.ExecuteReader())
+                    {
+                        while (eventsReader.Read())
+                        {
+                            var eventNode = new EventNode
+                            {
+                                Id = Convert.ToInt32(eventsReader["id"]),
+                                Name = eventsReader["event_name"].ToString(),
+                                Timestamp = Convert.ToDateTime(eventsReader["timestamp"])
+                            };
+
+                            processNode.Events.Add(eventNode);
+                        }
+                    }
+
+                    tree.Nodes.Add(processNode);
+                }
+            }
+
+            return tree;
         }
 
         [HttpPost]
@@ -225,5 +314,11 @@ namespace ProcessVisualizing.Controllers
 
             }
         }
+
+
+
+
+
+
     }
 }
