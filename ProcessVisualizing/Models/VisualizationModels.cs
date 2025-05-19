@@ -7,11 +7,13 @@ namespace ProcessVisualizing.Models
         public List<SelectListItem> AvailableFiles { get; set; }
         public int? SelectedFileId { get; set; }
         public ProcessTree ProcessTree { get; set; }
+        public string VisualizationData { get; set; } // JSON для визуализации
     }
 
     public class ProcessTree
     {
         public List<ProcessNode> Nodes { get; set; } = new List<ProcessNode>();
+        public string VisualizationData { get; set; } // Добавляем это свойство
     }
 
     public class ProcessNode

@@ -4,6 +4,7 @@ using ProcessVisualizing.Models;
 using System.Data.SQLite;
 using System.Xml;
 using System.Xml.Linq;
+using Newtonsoft.Json;
 
 namespace ProcessVisualizing.Controllers
 {
@@ -35,7 +36,7 @@ namespace ProcessVisualizing.Controllers
                 connection.Open();
 
                 // Получаем список файлов
-                var filesCmd = new SQLiteCommand("SELECT id, filename FROM Files", connection);
+                var filesCmd = new SQLiteCommand("SELECT id, filename FROM Files ORDER BY id DESC", connection);
                 using (var reader = filesCmd.ExecuteReader())
                 {
                     model.AvailableFiles = new List<SelectListItem>();
@@ -44,7 +45,8 @@ namespace ProcessVisualizing.Controllers
                         model.AvailableFiles.Add(new SelectListItem
                         {
                             Value = reader["id"].ToString(),
-                            Text = reader["filename"].ToString()
+                            Text = reader["filename"].ToString(),
+                            Selected = fileId.HasValue && reader["id"].ToString() == fileId.Value.ToString()
                         });
                     }
                 }
@@ -62,6 +64,7 @@ namespace ProcessVisualizing.Controllers
         private ProcessTree GetProcessTree(int fileId, SQLiteConnection connection)
         {
             var tree = new ProcessTree();
+            var visualizationNodes = new List<object>();
 
             // Получаем процессы для файла
             var processesCmd = new SQLiteCommand(
@@ -83,6 +86,13 @@ namespace ProcessVisualizing.Controllers
                         Events = new List<EventNode>()
                     };
 
+                    var visProcessNode = new
+                    {
+                        id = processId,
+                        text = processName,
+                        children = new List<object>()
+                    };
+
                     // Получаем события для процесса
                     var eventsCmd = new SQLiteCommand(
                         "SELECT id, event_name, timestamp FROM Events WHERE process_id = @processId ORDER BY timestamp",
@@ -101,30 +111,40 @@ namespace ProcessVisualizing.Controllers
                             };
 
                             processNode.Events.Add(eventNode);
+
+                            visProcessNode.children.Add(new
+                            {
+                                id = eventNode.Id,
+                                text = $"{eventNode.Name} ({eventNode.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")})"
+                            });
                         }
                     }
 
                     tree.Nodes.Add(processNode);
+                    visualizationNodes.Add(visProcessNode);
                 }
             }
 
+            // Сериализуем данные для визуализации
+            tree.VisualizationData = Newtonsoft.Json.JsonConvert.SerializeObject(visualizationNodes);
             return tree;
         }
 
         [HttpPost]
         public async Task<IActionResult> UploadXes(IFormFile xesFile)
         {
+            var model = new ProcessVisualizationModel();
+
             if (xesFile == null || xesFile.Length == 0)
             {
                 ViewBag.Error = "Файл не выбран или пуст";
-                return View("Index");
+                return View("Index", model);
             }
 
-            // Проверка размера файла (максимум 10MB)
             if (xesFile.Length > 10 * 1024 * 1024)
             {
                 ViewBag.Error = "Файл слишком большой. Максимальный размер - 10MB";
-                return View("Index");
+                return View("Index", model);
             }
 
             try
@@ -151,6 +171,35 @@ namespace ProcessVisualizing.Controllers
 
                 ViewBag.Message = $"Успешно загружено {traces.Count} процессов";
                 _logger.LogInformation($"Успешно загружен XES-файл: {xesFile.FileName}, процессов: {traces.Count}");
+
+                // После успешной загрузки обновляем список файлов
+                using (var connection = _context.GetConnection())
+                {
+                    connection.Open();
+                    // 1. Загружаем список файлов
+                    var filesCmd = new SQLiteCommand("SELECT id, filename FROM Files ORDER BY id DESC", connection);
+                    using (var reader = filesCmd.ExecuteReader())
+                    {
+                        model.AvailableFiles = new List<SelectListItem>();
+                        while (reader.Read())
+                        {
+                            model.AvailableFiles.Add(new SelectListItem
+                            {
+                                Value = reader["id"].ToString(),
+                                Text = reader["filename"].ToString()
+                            });
+                        }
+                    }
+
+                    // 2. Устанавливаем SelectedFileId на только что загруженный файл
+                    if (model.AvailableFiles.Any())
+                    {
+                        model.SelectedFileId = int.Parse(model.AvailableFiles.First().Value);
+                        model.ProcessTree = GetProcessTree(model.SelectedFileId.Value, connection);
+                    }
+                }
+
+                ViewBag.Message = $"Успешно загружено {traces.Count} процессов";
             }
             catch (XmlException xmlEx)
             {
@@ -168,7 +217,7 @@ namespace ProcessVisualizing.Controllers
                 _logger.LogError(ex, "Ошибка при загрузке XES-файла");
             }
 
-            return View("Index");
+            return View("Index", model); // Возвращаем модель с данными
         }
 
         private List<XesTrace> ParseXesFile(Stream stream)

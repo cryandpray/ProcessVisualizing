@@ -20,3 +20,29 @@ html {
 body {
   margin-bottom: 60px;
 }
+
+#processVisualization {
+    margin: 20px 0;
+}
+
+.node circle {
+    stroke: #999;
+    stroke-width: 1.5px;
+}
+
+.node text {
+    font: 10px sans-serif;
+}
+
+.link {
+    fill: none;
+    stroke: #ccc;
+    stroke-width: 1.5px;
+}
+
+.mermaid {
+    font-family: 'Arial';
+    background: white;
+    padding: 20px;
+    border-radius: 5px;
+}
