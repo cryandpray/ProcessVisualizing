@@ -22,7 +22,6 @@ namespace ProcessVisualizing
             builder.Services.AddScoped<ApplicationDbContext>();
             builder.Services.AddSingleton<JwtService>();
 
-
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.

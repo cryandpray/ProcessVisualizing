@@ -26,25 +26,58 @@ public class ApplicationDbContext
         {
             connection.Open();
             string sql = @"
-                PRAGMA foreign_keys = on;
-                
-                CREATE TABLE IF NOT EXISTS Users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    Login TEXT NOT NULL UNIQUE,
-                    PasswordHash TEXT NOT NULL,
-                    RegistrationDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-                
-                CREATE TABLE IF NOT EXISTS UserActivity (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id INTEGER NOT NULL,
-                    action TEXT NOT NULL,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
-                );
-            ";
+            PRAGMA foreign_keys = on;
+            
+            CREATE TABLE IF NOT EXISTS Users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                Login TEXT NOT NULL UNIQUE,
+                PasswordHash TEXT NOT NULL,
+                RegistrationDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            
+            CREATE TABLE IF NOT EXISTS UserActivity (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                action TEXT NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+            );
+            
+            CREATE TABLE IF NOT EXISTS Files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT NOT NULL,
+                upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            
+            CREATE TABLE IF NOT EXISTS Processes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                creation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                file_id INTEGER NOT NULL,
+                FOREIGN KEY (file_id) REFERENCES Files(id) ON DELETE CASCADE
+            );
+            
+            CREATE TABLE IF NOT EXISTS Events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                process_id INTEGER NOT NULL,
+                event_name TEXT NOT NULL,
+                timestamp TIMESTAMP NOT NULL,
+                FOREIGN KEY (process_id) REFERENCES Processes(id) ON DELETE CASCADE
+            );
+            
+            CREATE TABLE IF NOT EXISTS Attributes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                attribute_name TEXT NOT NULL,
+                attribute_value TEXT NOT NULL,
+                FOREIGN KEY (event_id) REFERENCES Events(id) ON DELETE CASCADE
+            );
+        ";
             var command = new SQLiteCommand(sql, connection);
             command.ExecuteNonQuery();
         }
     }
+
+
+
 }

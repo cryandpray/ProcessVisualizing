@@ -7,7 +7,9 @@ namespace ProcessVisualizing.Models
         public List<SelectListItem> AvailableFiles { get; set; }
         public int? SelectedFileId { get; set; }
         public ProcessTree ProcessTree { get; set; }
-        public string VisualizationData { get; set; } // JSON для визуализации
+        public string VisualizationData { get; set; }
+        public string EditFileName { get; set; } // Добавляем новое свойство для редактирования имени
+        public int? EditFileId { get; set; } // ID файла для редактирования
     }
 
     public class ProcessTree

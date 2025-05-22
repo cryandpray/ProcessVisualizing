@@ -295,7 +295,7 @@ namespace ProcessVisualizing.Controllers
                 {
                     using (var transaction = connection.BeginTransaction())
                     {
-                        try
+                        try//vfjjdkdksksk
                         {
                             // 1. Сохраняем информацию о файле
                             int fileId;
@@ -347,7 +347,7 @@ namespace ProcessVisualizing.Controllers
                                         await attrCmd.ExecuteNonQueryAsync();
                                     }
                                 }
-                            }
+                            }//jnnnjdjdfjdj
 
                             await transaction.CommitAsync();
                             _logger.LogInformation("Данные успешно сохранены в БД");
@@ -364,7 +364,75 @@ namespace ProcessVisualizing.Controllers
             }
         }
 
+        [HttpPost]
+        public IActionResult EditFileName(ProcessVisualizationModel model)
+        {
+            if (!model.EditFileId.HasValue || string.IsNullOrWhiteSpace(model.EditFileName))
+            {
+                ViewBag.Error = "Не выбрано название или файл";
+                return View("Index", model);
+            }
 
+            try
+            {
+                using (var connection = _context.GetConnection())
+                {
+                    connection.Open();
+
+                    var updateCmd = new SQLiteCommand(
+                        "UPDATE Files SET filename = @newName WHERE id = @fileId",
+                        connection);
+
+                    updateCmd.Parameters.AddWithValue("@newName", model.EditFileName);
+                    updateCmd.Parameters.AddWithValue("@fileId", model.EditFileId.Value);
+
+                    int rowsAffected = updateCmd.ExecuteNonQuery();
+
+                    if (rowsAffected == 0)
+                    {
+                        ViewBag.Error = "Файл не найден";
+                    }
+                    else
+                    {
+                        ViewBag.Message = "Название файла успешно изменено";
+                        _logger.LogInformation($"Изменено название файла ID {model.EditFileId} на {model.EditFileName}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ViewBag.Error = $"Ошибка при изменении названия: {ex.Message}";
+                _logger.LogError(ex, "Ошибка при изменении названия файла");
+            }
+
+            // Обновляем список файлов
+            using (var connection = _context.GetConnection())
+            {
+                connection.Open();
+                var filesCmd = new SQLiteCommand("SELECT id, filename FROM Files ORDER BY id DESC", connection);
+                using (var reader = filesCmd.ExecuteReader())
+                {
+                    model.AvailableFiles = new List<SelectListItem>();
+                    while (reader.Read())
+                    {
+                        model.AvailableFiles.Add(new SelectListItem
+                        {
+                            Value = reader["id"].ToString(),
+                            Text = reader["filename"].ToString(),
+                            Selected = model.SelectedFileId.HasValue &&
+                                     reader["id"].ToString() == model.SelectedFileId.Value.ToString()
+                        });
+                    }
+                }
+
+                if (model.SelectedFileId.HasValue)
+                {
+                    model.ProcessTree = GetProcessTree(model.SelectedFileId.Value, connection);
+                }
+            }
+
+            return View("Index", model);
+        }
 
 
 

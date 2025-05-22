@@ -65,6 +65,33 @@
             </div>
         </div>
 
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-warning text-white">
+                    <h5>Редактировать название файла</h5>
+                </div>
+                <div class="card-body">
+                    <form asp-action="EditFileName" method="post">
+                        <div class="form-group">
+                            <label>Выберите файл:</label>
+                            <select asp-for="EditFileId" class="form-control">
+                                <option value="">-- Выберите файл --</option>
+                                @foreach (var file in Model.AvailableFiles)
+                                {
+                                    <option value="@file.Value">@file.Text</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Новое название:</label>
+                            <input asp-for="EditFileName" class="form-control" required />
+                        </div>
+                        <button type="submit" class="btn btn-warning btn-block">Изменить название</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
     <!-- Визуализация и детали -->
     @if (Model.ProcessTree != null)
     {
@@ -122,6 +149,8 @@
         <div class="alert alert-info">Выбранный файл не содержит данных для визуализации</div>
     }
 </div>
+
+
 
     @section Scripts {
         <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
@@ -207,4 +236,22 @@
         font-size: 0.8em;
         margin-right: 5px;
     }
+
+    .card-header.bg-warning {
+        background-color: #ffc107 !important;
+    }
+
+    .btn-warning {
+        color: #212529;
+        background-color: #ffc107;
+        border-color: #ffc107;
+    }
+
+    .btn-warning:hover {
+        color: #212529;
+        background-color: #e0a800;
+        border-color: #d39e00;
+    }
+
 </style>
+
