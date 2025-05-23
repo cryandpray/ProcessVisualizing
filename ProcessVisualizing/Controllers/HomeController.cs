@@ -12,11 +12,15 @@ namespace ProcessVisualizing.Controllers
     {
         private readonly ApplicationDbContext _context;
         private readonly ILogger<HomeController> _logger;
+        private readonly JwtService _jwtService;
 
-        public HomeController(ApplicationDbContext context, ILogger<HomeController> logger)
+        public HomeController(ApplicationDbContext context,
+                             ILogger<HomeController> logger,
+                             JwtService jwtService)
         {
             _context = context;
             _logger = logger;
+            _jwtService = jwtService;
         }
 
         //public IActionResult Index()
@@ -291,7 +295,9 @@ namespace ProcessVisualizing.Controllers
 
         private async Task SaveTracesToDatabaseAsync(List<XesTrace> traces, string filename)
         {
-            var userId = 1;
+            var userId = AccountController.GetUserIdFromToken(Request, _jwtService);
+
+            Console.WriteLine(userId);  
 
             if (userId == null)
             {
@@ -455,34 +461,36 @@ namespace ProcessVisualizing.Controllers
         [HttpPost]
         public IActionResult DeleteFile(int fileId)
         {
-            try
+            using (var connection = _context.GetConnection())
             {
-                using (var connection = _context.GetConnection())
+                connection.Open();
+                using (var transaction = connection.BeginTransaction())
                 {
-                    connection.Open();
-
-                    // Удаляем файл (благодаря каскадному удалению в БД, связанные процессы и события также удалятся)
-                    var deleteCmd = new SQLiteCommand(
-                        "DELETE FROM Files WHERE id = @fileId",
-                        connection);
-                    deleteCmd.Parameters.AddWithValue("@fileId", fileId);
-
-                    int rowsAffected = deleteCmd.ExecuteNonQuery();
-
-                    if (rowsAffected == 0)
+                    try
                     {
-                        return NotFound();
+                        // Удаляем из UserFile
+                        var deleteUserFileCmd = new SQLiteCommand(
+                            "DELETE FROM UserFile WHERE file_id = @fileId",
+                            connection, transaction);
+                        deleteUserFileCmd.Parameters.AddWithValue("@fileId", fileId);
+                        int affectedRows = deleteUserFileCmd.ExecuteNonQuery();
+
+                        if (affectedRows == 0)
+                        {
+                            transaction.Rollback();
+                            return Json(new { success = false, message = "Файл не найден" });
+                        }
+
+                        transaction.Commit();
+                        return Json(new { success = true, message = "Данные успешно удалены" });
                     }
-
-                    _logger.LogInformation($"Файл ID {fileId} успешно удален");
+                    catch (Exception ex)
+                    {
+                        transaction.Rollback();
+                        _logger.LogError(ex, $"Ошибка при удалении файла ID {fileId}");
+                        return Json(new { success = false, message = "Ошибка при удалении файла" });
+                    }
                 }
-
-                return Ok();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, $"Ошибка при удалении файла ID {fileId}");
-                return StatusCode(500);
             }
         }
 

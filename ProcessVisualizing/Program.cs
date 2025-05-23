@@ -17,10 +17,7 @@ namespace ProcessVisualizing
             builder.Services.AddControllersWithViews();
 
             builder.Services.AddSingleton<JwtService>();
-
-
             builder.Services.AddScoped<ApplicationDbContext>();
-            builder.Services.AddSingleton<JwtService>();
 
             var app = builder.Build();
 

@@ -2,6 +2,13 @@
     ViewData["Title"] = "Визуализация процессов";
 }
 
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Xsrf
+@{
+    ViewData["Title"] = "Визуализация процессов";
+}
+
+@Html.AntiForgeryToken()
+
 @model ProcessVisualizing.Models.ProcessVisualizationModel
 
 <div class="container-fluid">
@@ -43,7 +50,7 @@
             </div>
         </div>
 
-        <!-- Панель выбора существующего файла -->
+        <!-- В разделе выбора файла -->
         <div class="col-md-4">
             <div class="card">
                 <div class="card-header bg-info text-white">
@@ -63,7 +70,10 @@
                             }
                         </select>
                     </div>
-                    <button id="showFileBtn" class="btn btn-primary btn-block">Показать</button>
+                    <div class="d-flex justify-content-between">
+                        <button id="showFileBtn" class="btn btn-primary">Показать</button>
+                        <button id="deleteFileBtn" class="btn btn-danger">Удалить</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -176,6 +186,35 @@
                     if (selectedFileId) {
                         var url = '@Url.Action("Index", "Home")' + '?fileId=' + selectedFileId;
                         window.location.href = url;
+                    }
+                });
+
+                // Обработчик для кнопки "Удалить"
+                document.getElementById('deleteFileBtn').addEventListener('click', function () {
+                    var selectedFileId = document.getElementById('fileSelect').value;
+                    if (selectedFileId && confirm('Вы уверены, что хотите удалить этот файл и все связанные данные?')) {
+                        fetch('@Url.Action("DeleteFile", "Home")?fileId=' + selectedFileId, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value
+                            }
+                        })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success) {
+                                    // Показываем сообщение об успехе
+                                    alert(data.message);
+                                    // Обновляем страницу
+                                    window.location.reload();
+                                } else {
+                                    alert(data.message);
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error:', error);
+                                alert('Произошла ошибка при удалении файла');
+                            });
                     }
                 });
 

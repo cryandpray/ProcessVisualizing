@@ -7,7 +7,7 @@ namespace ProcessVisualizing.Controllers
     public class AccountController : Controller
     {
         private readonly ApplicationDbContext _context;
-        public static JwtService _jwtService;
+        private readonly JwtService _jwtService;
 
         public AccountController(ApplicationDbContext context, JwtService jwtService)
         {
