@@ -54,9 +54,12 @@
                         <label>Доступные файлы:</label>
                         <select id="fileSelect" class="form-control">
                             <option value="">-- Выберите файл --</option>
-                            @foreach (var file in Model.AvailableFiles)
+                            @if (Model?.AvailableFiles != null)
                             {
-                                <option value="@file.Value" selected="@(file.Value == Model.SelectedFileId?.ToString())">@file.Text</option>
+                                @foreach (var file in Model.AvailableFiles)
+                                {
+                                    <option value="@file.Value" selected="@(file.Value == Model.SelectedFileId?.ToString())">@file.Text</option>
+                                }
                             }
                         </select>
                     </div>
@@ -251,6 +254,18 @@
         color: #212529;
         background-color: #e0a800;
         border-color: #d39e00;
+    }
+
+    .btn-danger {
+        color: #fff;
+        background-color: #dc3545;
+        border-color: #dc3545;
+    }
+
+    .btn-danger:hover {
+        color: #fff;
+        background-color: #c82333;
+        border-color: #bd2130;
     }
 
 </style>

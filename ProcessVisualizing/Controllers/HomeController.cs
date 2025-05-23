@@ -28,8 +28,10 @@ namespace ProcessVisualizing.Controllers
         {
             var model = new ProcessVisualizationModel
             {
+                AvailableFiles = new List<SelectListItem>(), // Инициализация
                 SelectedFileId = fileId
             };
+
 
             using (var connection = _context.GetConnection())
             {
@@ -289,13 +291,20 @@ namespace ProcessVisualizing.Controllers
 
         private async Task SaveTracesToDatabaseAsync(List<XesTrace> traces, string filename)
         {
+            var userId = 1;
+
+            if (userId == null)
+            {
+                throw new UnauthorizedAccessException("User ID not found in JWT token");
+            }
+
             using (var connection = _context.GetConnection())
             {
                 await connection.OpenAsync();
                 {
                     using (var transaction = connection.BeginTransaction())
                     {
-                        try//vfjjdkdksksk
+                        try
                         {
                             // 1. Сохраняем информацию о файле
                             int fileId;
@@ -307,7 +316,17 @@ namespace ProcessVisualizing.Controllers
                                 fileId = Convert.ToInt32(await fileCmd.ExecuteScalarAsync());
                             }
 
-                            // 2. Сохраняем процессы и связанные данные
+                            // 2. Добавляем связь пользователя и файла в таблицу UserFile
+                            using (var userFileCmd = new SQLiteCommand(
+                                "INSERT INTO UserFile (user_id, file_id) VALUES (@userId, @fileId)",
+                                connection, transaction))
+                            {
+                                userFileCmd.Parameters.AddWithValue("@userId", userId);
+                                userFileCmd.Parameters.AddWithValue("@fileId", fileId);
+                                await userFileCmd.ExecuteNonQueryAsync();
+                            }
+
+                            // 3. Сохраняем процессы и связанные данные
                             foreach (var trace in traces)
                             {
                                 var processCmd = new SQLiteCommand(
@@ -347,7 +366,7 @@ namespace ProcessVisualizing.Controllers
                                         await attrCmd.ExecuteNonQueryAsync();
                                     }
                                 }
-                            }//jnnnjdjdfjdj
+                            }
 
                             await transaction.CommitAsync();
                             _logger.LogInformation("Данные успешно сохранены в БД");
@@ -360,7 +379,6 @@ namespace ProcessVisualizing.Controllers
                         }
                     }
                 }
-
             }
         }
 
@@ -434,6 +452,48 @@ namespace ProcessVisualizing.Controllers
             return View("Index", model);
         }
 
+        [HttpPost]
+        public IActionResult DeleteFile(int fileId)
+        {
+            try
+            {
+                using (var connection = _context.GetConnection())
+                {
+                    connection.Open();
+
+                    // Удаляем файл (благодаря каскадному удалению в БД, связанные процессы и события также удалятся)
+                    var deleteCmd = new SQLiteCommand(
+                        "DELETE FROM Files WHERE id = @fileId",
+                        connection);
+                    deleteCmd.Parameters.AddWithValue("@fileId", fileId);
+
+                    int rowsAffected = deleteCmd.ExecuteNonQuery();
+
+                    if (rowsAffected == 0)
+                    {
+                        return NotFound();
+                    }
+
+                    _logger.LogInformation($"Файл ID {fileId} успешно удален");
+                }
+
+                return Ok();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Ошибка при удалении файла ID {fileId}");
+                return StatusCode(500);
+            }
+        }
+
+        //private readonly JwtService _jwtService;
+
+        //public HomeController(ApplicationDbContext context, ILogger<HomeController> logger, JwtService jwtService)
+        //{
+        //    _context = context;
+        //    _logger = logger;
+        //    _jwtService = jwtService;
+        //}
 
 
 

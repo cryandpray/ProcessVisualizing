@@ -7,7 +7,7 @@ namespace ProcessVisualizing.Controllers
     public class AccountController : Controller
     {
         private readonly ApplicationDbContext _context;
-        private readonly JwtService _jwtService;
+        public static JwtService _jwtService;
 
         public AccountController(ApplicationDbContext context, JwtService jwtService)
         {
@@ -158,11 +158,11 @@ namespace ProcessVisualizing.Controllers
             return View();
         }
 
-        public int? GetUserIdFromToken()
+        public static int? GetUserIdFromToken(HttpRequest request, JwtService jwtService)
         {
-            if (Request.Cookies.TryGetValue("jwt_token", out var token))
+            if (request.Cookies.TryGetValue("jwt_token", out var token))
             {
-                var principal = _jwtService.ValidateToken(token);
+                var principal = jwtService.ValidateToken(token);
                 var uidClaim = principal?.FindFirst("uid");
                 if (uidClaim != null && int.TryParse(uidClaim.Value, out var userId))
                 {
