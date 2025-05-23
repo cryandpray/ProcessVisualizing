@@ -30,22 +30,35 @@ namespace ProcessVisualizing.Controllers
 
         public IActionResult Index(int? fileId)
         {
+            //Проверка зашёл ли пользователь в аккаунт (есть ли токен в куки-файлах)
+            var userId = AccountController.GetUserIdFromToken(Request, _jwtService);
+            if (userId == null)
+            {
+                return RedirectToAction("Login", "Account");
+            }
+
             var model = new ProcessVisualizationModel
             {
-                AvailableFiles = new List<SelectListItem>(), // Инициализация
+                AvailableFiles = new List<SelectListItem>(),
                 SelectedFileId = fileId
             };
-
 
             using (var connection = _context.GetConnection())
             {
                 connection.Open();
 
-                // Получаем список файлов
-                var filesCmd = new SQLiteCommand("SELECT id, filename FROM Files ORDER BY id DESC", connection);
+                // Получаем только файлы пользователя
+                var filesCmd = new SQLiteCommand(
+                    @"SELECT f.id, f.filename 
+                      FROM Files f
+                      JOIN UserFile uf ON f.id = uf.file_id
+                      WHERE uf.user_id = @userId
+                      ORDER BY f.id DESC",
+                    connection);
+                filesCmd.Parameters.AddWithValue("@userId", userId);
+
                 using (var reader = filesCmd.ExecuteReader())
                 {
-                    model.AvailableFiles = new List<SelectListItem>();
                     while (reader.Read())
                     {
                         model.AvailableFiles.Add(new SelectListItem
@@ -57,10 +70,25 @@ namespace ProcessVisualizing.Controllers
                     }
                 }
 
-                // Если выбран файл - загружаем его процессы
                 if (model.SelectedFileId.HasValue)
                 {
-                    model.ProcessTree = GetProcessTree(model.SelectedFileId.Value, connection);
+                    // Проверяем, что файл принадлежит пользователю
+                    var checkCmd = new SQLiteCommand(
+                        "SELECT COUNT(*) FROM UserFile WHERE user_id = @userId AND file_id = @fileId",
+                        connection);
+                    checkCmd.Parameters.AddWithValue("@userId", userId);
+                    checkCmd.Parameters.AddWithValue("@fileId", model.SelectedFileId.Value);
+
+                    int count = Convert.ToInt32(checkCmd.ExecuteScalar());
+                    if (count == 0)
+                    {
+                        // Если файл не принадлежит пользователю, очищаем выбор
+                        model.SelectedFileId = null;
+                    }
+                    else
+                    {
+                        model.ProcessTree = GetProcessTree(model.SelectedFileId.Value, connection);
+                    }
                 }
             }
 
@@ -136,21 +164,74 @@ namespace ProcessVisualizing.Controllers
             return tree;
         }
 
+        // Новый вспомогательный метод для получения модели с файлами пользователя
+        private async Task<ProcessVisualizationModel> GetUserFilesModelAsync(int? userId, bool showLatest = false)
+        {
+            var model = new ProcessVisualizationModel
+            {
+                AvailableFiles = new List<SelectListItem>()
+            };
+
+            if (userId == null) return model;
+
+            using (var connection = _context.GetConnection())
+            {
+                await connection.OpenAsync();
+
+                // Запрос для получения файлов пользователя
+                var filesCmd = new SQLiteCommand(
+                    @"SELECT f.id, f.filename 
+                      FROM Files f
+                      JOIN UserFile uf ON f.id = uf.file_id
+                      WHERE uf.user_id = @userId
+                      ORDER BY f.id DESC",
+                    connection);
+                filesCmd.Parameters.AddWithValue("@userId", userId);
+
+                using (var reader = await filesCmd.ExecuteReaderAsync())
+                {
+                    while (await reader.ReadAsync())
+                    {
+                        model.AvailableFiles.Add(new SelectListItem
+                        {
+                            Value = reader["id"].ToString(),
+                            Text = reader["filename"].ToString()
+                        });
+                    }
+                }
+
+                // Если нужно показать последний загруженный файл
+                if (showLatest && model.AvailableFiles.Any())
+                {
+                    model.SelectedFileId = int.Parse(model.AvailableFiles.First().Value);
+                    model.ProcessTree = GetProcessTree(model.SelectedFileId.Value, connection);
+                }
+            }
+
+            return model;
+        }
+
         [HttpPost]
         public async Task<IActionResult> UploadXes(IFormFile xesFile)
         {
+            var userId = AccountController.GetUserIdFromToken(Request, _jwtService);
+            if (userId == null)
+            {
+                return RedirectToAction("Login", "Account");
+            }
+
             var model = new ProcessVisualizationModel();
 
             if (xesFile == null || xesFile.Length == 0)
             {
                 ViewBag.Error = "Файл не выбран или пуст";
-                return View("Index", model);
+                return View("Index", await GetUserFilesModelAsync(userId));
             }
 
             if (xesFile.Length > 10 * 1024 * 1024)
             {
                 ViewBag.Error = "Файл слишком большой. Максимальный размер - 10MB";
-                return View("Index", model);
+                return View("Index", await GetUserFilesModelAsync(userId));
             }
 
             try
@@ -178,34 +259,10 @@ namespace ProcessVisualizing.Controllers
                 ViewBag.Message = $"Успешно загружено {traces.Count} процессов";
                 _logger.LogInformation($"Успешно загружен XES-файл: {xesFile.FileName}, процессов: {traces.Count}");
 
-                // После успешной загрузки обновляем список файлов
-                using (var connection = _context.GetConnection())
-                {
-                    connection.Open();
-                    // 1. Загружаем список файлов
-                    var filesCmd = new SQLiteCommand("SELECT id, filename FROM Files ORDER BY id DESC", connection);
-                    using (var reader = filesCmd.ExecuteReader())
-                    {
-                        model.AvailableFiles = new List<SelectListItem>();
-                        while (reader.Read())
-                        {
-                            model.AvailableFiles.Add(new SelectListItem
-                            {
-                                Value = reader["id"].ToString(),
-                                Text = reader["filename"].ToString()
-                            });
-                        }
-                    }
-
-                    // 2. Устанавливаем SelectedFileId на только что загруженный файл
-                    if (model.AvailableFiles.Any())
-                    {
-                        model.SelectedFileId = int.Parse(model.AvailableFiles.First().Value);
-                        model.ProcessTree = GetProcessTree(model.SelectedFileId.Value, connection);
-                    }
-                }
-
                 ViewBag.Message = $"Успешно загружено {traces.Count} процессов";
+
+                // Возвращаем модель только с файлами пользователя
+                return View("Index", await GetUserFilesModelAsync(userId, showLatest: true));
             }
             catch (XmlException xmlEx)
             {
@@ -296,6 +353,10 @@ namespace ProcessVisualizing.Controllers
         private async Task SaveTracesToDatabaseAsync(List<XesTrace> traces, string filename)
         {
             var userId = AccountController.GetUserIdFromToken(Request, _jwtService);
+            if (userId == null)
+            {
+                throw new UnauthorizedAccessException("User ID not found in JWT token");
+            }
 
             Console.WriteLine(userId);  
 
@@ -391,6 +452,12 @@ namespace ProcessVisualizing.Controllers
         [HttpPost]
         public IActionResult EditFileName(ProcessVisualizationModel model)
         {
+            var userId = AccountController.GetUserIdFromToken(Request, _jwtService);
+            if (userId == null)
+            {
+                return RedirectToAction("Login", "Account");
+            }
+
             if (!model.EditFileId.HasValue || string.IsNullOrWhiteSpace(model.EditFileName))
             {
                 ViewBag.Error = "Не выбрано название или файл";
@@ -403,6 +470,21 @@ namespace ProcessVisualizing.Controllers
                 {
                     connection.Open();
 
+                    // Проверяем права доступа
+                    var checkCmd = new SQLiteCommand(
+                        "SELECT COUNT(*) FROM UserFile WHERE user_id = @userId AND file_id = @fileId",
+                        connection);
+                    checkCmd.Parameters.AddWithValue("@userId", userId);
+                    checkCmd.Parameters.AddWithValue("@fileId", model.EditFileId.Value);
+
+                    int count = Convert.ToInt32(checkCmd.ExecuteScalar());
+                    if (count == 0)
+                    {
+                        ViewBag.Error = "Файл не найден или нет прав доступа";
+                        return View("Index", model);
+                    }
+
+                    // Обновляем имя
                     var updateCmd = new SQLiteCommand(
                         "UPDATE Files SET filename = @newName WHERE id = @fileId",
                         connection);
@@ -461,6 +543,12 @@ namespace ProcessVisualizing.Controllers
         [HttpPost]
         public IActionResult DeleteFile(int fileId)
         {
+            var userId = AccountController.GetUserIdFromToken(Request, _jwtService);
+            if (userId == null)
+            {
+                return Json(new { success = false, message = "Требуется авторизация" });
+            }
+
             using (var connection = _context.GetConnection())
             {
                 connection.Open();
@@ -468,6 +556,21 @@ namespace ProcessVisualizing.Controllers
                 {
                     try
                     {
+                        // Проверяем, что файл принадлежит пользователю
+                        var checkCmd = new SQLiteCommand(
+                            "SELECT COUNT(*) FROM UserFile WHERE user_id = @userId AND file_id = @fileId",
+                            connection, transaction);
+                        checkCmd.Parameters.AddWithValue("@userId", userId);
+                        checkCmd.Parameters.AddWithValue("@fileId", fileId);
+
+                        int count = Convert.ToInt32(checkCmd.ExecuteScalar());
+                        if (count == 0)
+                        {
+                            transaction.Rollback();
+                            return Json(new { success = false, message = "Файл не найден или нет прав доступа" });
+                        }
+
+
                         // Удаляем из UserFile
                         var deleteUserFileCmd = new SQLiteCommand(
                             "DELETE FROM UserFile WHERE file_id = @fileId",
@@ -493,16 +596,6 @@ namespace ProcessVisualizing.Controllers
                 }
             }
         }
-
-        //private readonly JwtService _jwtService;
-
-        //public HomeController(ApplicationDbContext context, ILogger<HomeController> logger, JwtService jwtService)
-        //{
-        //    _context = context;
-        //    _logger = logger;
-        //    _jwtService = jwtService;
-        //}
-
 
 
     }

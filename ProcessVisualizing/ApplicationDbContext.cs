@@ -72,6 +72,14 @@ public class ApplicationDbContext
                 attribute_value TEXT NOT NULL,
                 FOREIGN KEY (event_id) REFERENCES Events(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS UserFile (
+                user_id INTEGER NOT NULL,
+                file_id INTEGER NOT NULL,
+                PRIMARY KEY (user_id, file_id),
+                FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
+                FOREIGN KEY (file_id) REFERENCES Files(id) ON DELETE CASCADE
+            );
         ";
             var command = new SQLiteCommand(sql, connection);
             command.ExecuteNonQuery();
