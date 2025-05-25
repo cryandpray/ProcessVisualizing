@@ -28,13 +28,18 @@ namespace ProcessVisualizing.Controllers
         //    return View();
         //}
 
-        public IActionResult Index(int? fileId)
+        public IActionResult Index(int? fileId, string message = null)
         {
             //Проверка зашёл ли пользователь в аккаунт (есть ли токен в куки-файлах)
             var userId = AccountController.GetUserIdFromToken(Request, _jwtService);
             if (userId == null)
             {
                 return RedirectToAction("Login", "Account");
+            }
+
+            if (!string.IsNullOrEmpty(message))
+            {
+                ViewBag.Message = message;
             }
 
             var model = new ProcessVisualizationModel
@@ -50,10 +55,10 @@ namespace ProcessVisualizing.Controllers
                 // Получаем только файлы пользователя
                 var filesCmd = new SQLiteCommand(
                     @"SELECT f.id, f.filename 
-                      FROM Files f
-                      JOIN UserFile uf ON f.id = uf.file_id
-                      WHERE uf.user_id = @userId
-                      ORDER BY f.id DESC",
+              FROM Files f
+              JOIN UserFile uf ON f.id = uf.file_id
+              WHERE uf.user_id = @userId
+              ORDER BY f.id DESC",
                     connection);
                 filesCmd.Parameters.AddWithValue("@userId", userId);
 
@@ -220,8 +225,6 @@ namespace ProcessVisualizing.Controllers
                 return RedirectToAction("Login", "Account");
             }
 
-            var model = new ProcessVisualizationModel();
-
             if (xesFile == null || xesFile.Length == 0)
             {
                 ViewBag.Error = "Файл не выбран или пуст";
@@ -253,16 +256,14 @@ namespace ProcessVisualizing.Controllers
                 // Удаляем временный файл
                 System.IO.File.Delete(tempFilePath);
 
+                // Генерируем уникальное имя файла с timestamp
+                var uniqueFileName = $"{Path.GetFileNameWithoutExtension(xesFile.FileName)}_{DateTime.Now:yyyyMMddHHmmss}{Path.GetExtension(xesFile.FileName)}";
+
                 // Сохранение в БД
-                await SaveTracesToDatabaseAsync(traces, xesFile.FileName);
+                await SaveTracesToDatabaseAsync(traces, uniqueFileName);
 
-                ViewBag.Message = $"Успешно загружено {traces.Count} процессов";
-                _logger.LogInformation($"Успешно загружен XES-файл: {xesFile.FileName}, процессов: {traces.Count}");
-
-                ViewBag.Message = $"Успешно загружено {traces.Count} процессов";
-
-                // Возвращаем модель только с файлами пользователя
-                return View("Index", await GetUserFilesModelAsync(userId, showLatest: true));
+                // Перенаправляем на Index с параметром noCache, чтобы избежать повторной отправки формы
+                return RedirectToAction("Index", new { message = $"Успешно загружено {traces.Count} процессов" });
             }
             catch (XmlException xmlEx)
             {
@@ -280,7 +281,7 @@ namespace ProcessVisualizing.Controllers
                 _logger.LogError(ex, "Ошибка при загрузке XES-файла");
             }
 
-            return View("Index", model); // Возвращаем модель с данными
+            return View("Index", await GetUserFilesModelAsync(userId));
         }
 
         private List<XesTrace> ParseXesFile(Stream stream)
@@ -358,12 +359,7 @@ namespace ProcessVisualizing.Controllers
                 throw new UnauthorizedAccessException("User ID not found in JWT token");
             }
 
-            Console.WriteLine(userId);  
-
-            if (userId == null)
-            {
-                throw new UnauthorizedAccessException("User ID not found in JWT token");
-            }
+            Console.WriteLine(userId);
 
             using (var connection = _context.GetConnection())
             {
@@ -556,7 +552,7 @@ namespace ProcessVisualizing.Controllers
                 {
                     try
                     {
-                        // Проверяем, что файл принадлежит пользователю
+                        // 1. Проверяем, что файл принадлежит пользователю
                         var checkCmd = new SQLiteCommand(
                             "SELECT COUNT(*) FROM UserFile WHERE user_id = @userId AND file_id = @fileId",
                             connection, transaction);
@@ -570,18 +566,29 @@ namespace ProcessVisualizing.Controllers
                             return Json(new { success = false, message = "Файл не найден или нет прав доступа" });
                         }
 
-
-                        // Удаляем из UserFile
+                        // 2. Удаляем связь пользователя с файлом
                         var deleteUserFileCmd = new SQLiteCommand(
-                            "DELETE FROM UserFile WHERE file_id = @fileId",
+                            "DELETE FROM UserFile WHERE user_id = @userId AND file_id = @fileId",
                             connection, transaction);
+                        deleteUserFileCmd.Parameters.AddWithValue("@userId", userId);
                         deleteUserFileCmd.Parameters.AddWithValue("@fileId", fileId);
-                        int affectedRows = deleteUserFileCmd.ExecuteNonQuery();
+                        deleteUserFileCmd.ExecuteNonQuery();
 
-                        if (affectedRows == 0)
+                        // 3. Проверяем, есть ли другие пользователи, имеющие доступ к этому файлу
+                        var checkOtherUsersCmd = new SQLiteCommand(
+                            "SELECT COUNT(*) FROM UserFile WHERE file_id = @fileId",
+                            connection, transaction);
+                        checkOtherUsersCmd.Parameters.AddWithValue("@fileId", fileId);
+                        int otherUsersCount = Convert.ToInt32(checkOtherUsersCmd.ExecuteScalar());
+
+                        // 4. Если других пользователей нет - удаляем сам файл и все связанные данные
+                        if (otherUsersCount == 0)
                         {
-                            transaction.Rollback();
-                            return Json(new { success = false, message = "Файл не найден" });
+                            var deleteFileCmd = new SQLiteCommand(
+                                "DELETE FROM Files WHERE id = @fileId",
+                                connection, transaction);
+                            deleteFileCmd.Parameters.AddWithValue("@fileId", fileId);
+                            deleteFileCmd.ExecuteNonQuery();
                         }
 
                         transaction.Commit();

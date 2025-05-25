@@ -1,4 +1,4 @@
-﻿@{
+﻿﻿@{
     ViewData["Title"] = "Визуализация процессов";
 }
 
@@ -38,7 +38,7 @@
                     <h5>Загрузить новый файл</h5>
                 </div>
                 <div class="card-body">
-                    <form asp-action="UploadXes" method="post" enctype="multipart/form-data">
+                    <form asp-action="UploadXes" method="post" enctype="multipart/form-data" id="uploadForm">
                         <div class="form-group">
                             <label>Выберите XES-файл:</label>
                             <input type="file" name="xesFile" class="form-control-file" accept=".xes,.xml" required />
@@ -105,63 +105,63 @@
             </div>
         </div>
 
-    <!-- Визуализация и детали -->
-    @if (Model.ProcessTree != null)
-    {
-        <div class="row">
-            <!-- Графическая визуализация -->
-            <div class="col-md-8">
-                <div class="card mb-4">
-                    <div class="card-header bg-secondary text-white">
-                        <h5>Графическое представление</h5>
-                    </div>
-                    <div class="card-body">
-                        <div id="processVisualization" style="height: 500px; border: 1px solid #eee; border-radius: 4px;"></div>
+        <!-- Визуализация и детали -->
+        @if (Model.ProcessTree != null)
+        {
+            <div class="row">
+                <!-- Графическая визуализация -->
+                <div class="col-md-8">
+                    <div class="card mb-4">
+                        <div class="card-header bg-secondary text-white">
+                            <h5>Графическое представление</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="processVisualization" style="height: 500px; border: 1px solid #eee; border-radius: 4px;"></div>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Детали процесса -->
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-header bg-secondary text-white">
-                        <h5>Детали процесса</h5>
-                    </div>
-                    <div class="card-body" style="max-height: 500px; overflow-y: auto;">
-                        @if (Model.ProcessTree.Nodes.Any())
-                        {
-                            <ul class="list-group">
-                                @foreach (var process in Model.ProcessTree.Nodes)
-                                {
-                                    <li class="list-group-item">
-                                        <h6 class="font-weight-bold">@process.Name</h6>
-                                        <ul class="pl-3">
-                                            @foreach (var evt in process.Events)
-                                            {
-                                                <li>
-                                                    <span class="badge badge-light">@evt.Timestamp.ToString("HH:mm:ss")</span>
-                                                    @evt.Name
-                                                </li>
-                                            }
-                                        </ul>
-                                    </li>
-                                }
-                            </ul>
-                        }
-                        else
-                        {
-                            <div class="alert alert-info">Нет данных для отображения</div>
-                        }
+                <!-- Детали процесса -->
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header bg-secondary text-white">
+                            <h5>Детали процесса</h5>
+                        </div>
+                        <div class="card-body" style="max-height: 500px; overflow-y: auto;">
+                            @if (Model.ProcessTree.Nodes.Any())
+                            {
+                                <ul class="list-group">
+                                    @foreach (var process in Model.ProcessTree.Nodes)
+                                    {
+                                        <li class="list-group-item">
+                                            <h6 class="font-weight-bold">@process.Name</h6>
+                                            <ul class="pl-3">
+                                                @foreach (var evt in process.Events)
+                                                {
+                                                    <li>
+                                                        <span class="badge badge-light">@evt.Timestamp.ToString("HH:mm:ss")</span>
+                                                        @evt.Name
+                                                    </li>
+                                                }
+                                            </ul>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <div class="alert alert-info">Нет данных для отображения</div>
+                            }
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
-    }
-    else if (Model.SelectedFileId.HasValue)
-    {
-        <div class="alert alert-info">Выбранный файл не содержит данных для визуализации</div>
-    }
-</div>
+        }
+        else if (Model.SelectedFileId.HasValue)
+        {
+            <div class="alert alert-info">Выбранный файл не содержит данных для визуализации</div>
+        }
+    </div>
 
 
 
@@ -203,10 +203,8 @@
                             .then(response => response.json())
                             .then(data => {
                                 if (data.success) {
-                                    // Показываем сообщение об успехе
                                     alert(data.message);
-                                    // Обновляем страницу
-                                    window.location.reload();
+                                    window.location.href = '@Url.Action("Index", "Home")';
                                 } else {
                                     alert(data.message);
                                 }
@@ -218,13 +216,21 @@
                     }
                 });
 
+                // Обработчик формы загрузки
+                document.getElementById('uploadForm').addEventListener('submit', function (e) {
+                    // Блокируем кнопку отправки
+                    var submitButton = this.querySelector('button[type="submit"]');
+                    submitButton.disabled = true;
+                    submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Загрузка...';
+                });
+
             @if (Model.ProcessTree != null && !string.IsNullOrEmpty(Model.ProcessTree.VisualizationData))
             {
                 <text>
                         renderVisualization(@Html.Raw(Model.ProcessTree.VisualizationData));
                 </text>
             }
-                    });
+                                });
 
             function renderVisualization(data) {
                 if (!data || data.length === 0) {
@@ -259,53 +265,56 @@
         </script>
     }
 
-<style>
-    .mermaid {
-        background-color: #f8f9fa;
-        padding: 15px;
-        border-radius: 4px;
-    }
+    <style>
+        .mermaid {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+        }
 
-    .card-header h5 {
-        margin-bottom: 0;
-    }
+        .card-header h5 {
+            margin-bottom: 0;
+        }
 
-    .list-group-item {
-        padding: 0.75rem 1.25rem;
-    }
+        .list-group-item {
+            padding: 0.75rem 1.25rem;
+        }
 
-    .badge {
-        font-size: 0.8em;
-        margin-right: 5px;
-    }
+        .badge {
+            font-size: 0.8em;
+            margin-right: 5px;
+        }
 
-    .card-header.bg-warning {
-        background-color: #ffc107 !important;
-    }
+        .card-header.bg-warning {
+            background-color: #ffc107 !important;
+        }
 
-    .btn-warning {
-        color: #212529;
-        background-color: #ffc107;
-        border-color: #ffc107;
-    }
+        .btn-warning {
+            color: #212529;
+            background-color: #ffc107;
+            border-color: #ffc107;
+        }
 
-    .btn-warning:hover {
-        color: #212529;
-        background-color: #e0a800;
-        border-color: #d39e00;
-    }
+        .btn-warning:hover {
+            color: #212529;
+            background-color: #e0a800;
+            border-color: #d39e00;
+        }
 
-    .btn-danger {
-        color: #fff;
-        background-color: #dc3545;
-        border-color: #dc3545;
-    }
+        .btn-danger {
+            color: #fff;
+            background-color: #dc3545;
+            border-color: #dc3545;
+        }
 
-    .btn-danger:hover {
-        color: #fff;
-        background-color: #c82333;
-        border-color: #bd2130;
-    }
+        .btn-danger:hover {
+            color: #fff;
+            background-color: #c82333;
+            border-color: #bd2130;
+            }
 
-</style>
-
+        .btn-success[disabled] {
+            opacity: 0.65;
+            cursor: not-allowed;
+        }
+    </style>
